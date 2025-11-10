@@ -1,38 +1,50 @@
-import "dotenv/config";
 import { Client } from "@notionhq/client";
-import axios from "axios";
+import puppeteer from "puppeteer";
 import * as cheerio from "cheerio";
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const DATABASE_ID = process.env.NOTION_DB_ID;
 
-async function defaultScraper(url) {
-    const { data: html } = await axios.get(url);
+async function defaultScraper(url, site) {
+    const browser = await puppeteer.launch({ headless: "new" });
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    const html = await page.content();
+    await browser.close();
     const $ = cheerio.load(html);
 
-    const title = $("title").text().trim() || "Page sans titre";
-    const description =
+    let title = $("title").text().trim() || "Page sans titre";
+    let description =
         $('meta[name="description"]').attr("content") ||
         $('meta[property="og:description"]').attr("content") ||
         "";
-    const image =
+    let image =
         $('meta[property="og:image"]').attr("content") ||
         $('meta[name="twitter:image"]').attr("content") ||
         "";
-    const city =
+    let city =
         $('meta[property="og:locale"]').attr("content") ||
         "";
 
-    const price = "";
-    const pricePerM2 = "";
-    const surfaceHouse = "";
-    const surfaceLand = "";
+    let price = "";
+    let pricePerM2 = "";
+    let surfaceHouse = "";
+    let surfaceLand = "";
+
+    // Scraping spécifique Leboncoin
+    if (site === "leboncoin") {
+        // Placeholders pour les sélecteurs CSS Leboncoin
+        price = $('.Price__value').first().text().trim() || "";
+        surfaceHouse = $('.Property__surface').first().text().trim() || "";
+        city = $('.Property__city').first().text().trim() || city;
+        // Les sélecteurs ci-dessus sont des exemples à adapter selon la structure réelle du site
+    }
 
     return { title, description, image, city, price, pricePerM2, surfaceHouse, surfaceLand };
 }
 
 const scrapers = {
-    "leboncoin.fr": defaultScraper,
+    "leboncoin.fr": (url) => defaultScraper(url, "leboncoin"),
     "propietes-privees.com": defaultScraper,
     "immobilier.lefigaro.fr": defaultScraper,
     "immobilier.notaires.fr": defaultScraper,
@@ -53,19 +65,17 @@ async function run(url) {
 
     await notion.pages.create({
         parent: { database_id: DATABASE_ID },
+        title: [{ text: { content: title } }],
         properties: {
-            Title: { title: [{ text: { content: title } }] },
-
-            Scrapping: { select: { name: "🟢 Scrappé" } },
-
-            Prix: { rich_text: [{ text: { content: price } }] },
+            "Avancement": { status: { name: "Annonce" } },
+            "Images": { files: [] },
+            "Prix": { rich_text: [{ text: { content: price } }] },
             "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
+            "Scrapping": { select: { name: "🟢 Scrappé" } },
             "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
             "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
-            Ville: { rich_text: [{ text: { content: city } }] },
-            Description: { rich_text: [{ text: { content: description } }] },
-
-            URL: { url },
+            "URL": { url },
+            "Ville": { rich_text: [{ text: { content: city } }] },
         },
         ...(image && {
             cover: { external: { url: image } },

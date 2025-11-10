@@ -86,31 +86,42 @@ async function run(url) {
     }
 
     try {
-        await notion.pages.create({
-            parent: { database_id: DATABASE_ID },
-            title: [{ text: { content: title } }],
-            properties: {
-                "Avancement": { status: { name: "Annonce" } },
-                "Images": { files: [] },
-                "Prix": { rich_text: [{ text: { content: price } }] },
-                "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
-                "Scrapping": { select: { name: "🟢 Scrappé" } },
-                "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
-                "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
-                "URL": { url },
-                "Ville": { rich_text: [{ text: { content: city } }] },
-            },
-            ...(image && {
-                cover: { external: { url: image } },
-            }),
-        });
-        console.log("✅ Carte ajoutée à Notion !");
+        const properties = {
+            "Avancement": { status: { name: "Annonce" } },
+            "Scrapping": { select: { name: "🟢 Scrappé" } },
+            "Prix": { rich_text: [{ text: { content: price } }] },
+            "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
+            "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
+            "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
+            "Ville": { rich_text: [{ text: { content: city } }] },
+            "URL": { url },
+        };
+
+        if (pageId) {
+            console.log(`✏️ Mise à jour de la page existante : ${pageId}`);
+            await notion.pages.update({
+                page_id: pageId,
+                properties
+            });
+            console.log("✅ Page mise à jour dans Notion !");
+        } else {
+            console.log("➕ Création d’une nouvelle page dans Notion...");
+            await notion.pages.create({
+                parent: { database_id: DATABASE_ID },
+                properties,
+                ...(image && {
+                    cover: { external: { url: image } },
+                }),
+            });
+            console.log("✅ Nouvelle page créée dans Notion !");
+        }
     } catch (error) {
-        console.error("Erreur lors de la création de la page Notion :", error);
+        console.error("Erreur lors de la création/mise à jour de la page Notion :", error);
     }
 }
 
 const url = process.argv[2];
+const pageId = process.argv[3];
 if (!url) {
     console.error("❌ Utilisation : node src/main.js <url>");
     process.exit(1);

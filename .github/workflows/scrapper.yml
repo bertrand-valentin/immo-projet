@@ -7,6 +7,10 @@ on:
         description: "URL à scrapper (laisser vide pour ignorer)"
         required: true
         default: ""
+      pageId:
+        description: "ID de la page Notion à mettre à jour (laisser vide pour créer une nouvelle carte)"
+        required: false
+        default: ""
 
 jobs:
   scrape:
@@ -31,7 +35,7 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.url }}" != "" ]; then
             echo "Scraping de l'URL passée manuellement : ${{ github.event.inputs.url }}"
-            node src/main.js ${{ github.event.inputs.url }}
+            node src/main.js "${{ github.event.inputs.url }}" "${{ github.event.inputs.pageId }}"
           else
             echo "Aucune URL passée, (futur mode auto à implémenter)"
           fi

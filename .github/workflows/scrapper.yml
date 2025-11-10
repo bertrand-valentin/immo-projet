@@ -1,0 +1,37 @@
+name: 🏗️ Notion Scraper
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "URL à scrapper (laisser vide pour ignorer)"
+        required: true
+        default: ""
+
+  jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧩 Checkout du code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Configuration Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 📦 Installation des dépendances
+        run: npm ci
+
+      - name: 🚀 Lancement du scraper
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+        run: |
+          if [ "${{ github.event.inputs.url }}" != "" ]; then
+            echo "Scraping de l'URL passée manuellement : ${{ github.event.inputs.url }}"
+            node src/main.js ${{ github.event.inputs.url }}
+          else
+            echo "Aucune URL passée, (futur mode auto à implémenter)"
+          fi

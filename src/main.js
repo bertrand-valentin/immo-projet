@@ -2,45 +2,62 @@ import { Client } from "@notionhq/client";
 import puppeteer from "puppeteer";
 import * as cheerio from "cheerio";
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const notion = process.env.NOTION_TOKEN && process.env.NOTION_DB_ID ? new Client({ auth: process.env.NOTION_TOKEN }) : null;
 const DATABASE_ID = process.env.NOTION_DB_ID;
 
 async function defaultScraper(url, site) {
-    const browser = await puppeteer.launch({ headless: "new" });
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    const html = await page.content();
-    await browser.close();
-    const $ = cheerio.load(html);
+    try {
+        const browser = await puppeteer.launch({
+            headless: true,
+            args: ["--no-sandbox", "--disable-setuid-sandbox"]
+        });
+        const page = await browser.newPage();
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+        const html = await page.content();
+        await browser.close();
+        const $ = cheerio.load(html);
 
-    let title = $("title").text().trim() || "Page sans titre";
-    let description =
-        $('meta[name="description"]').attr("content") ||
-        $('meta[property="og:description"]').attr("content") ||
-        "";
-    let image =
-        $('meta[property="og:image"]').attr("content") ||
-        $('meta[name="twitter:image"]').attr("content") ||
-        "";
-    let city =
-        $('meta[property="og:locale"]').attr("content") ||
-        "";
+        let title = $("title").text().trim() || "Page sans titre";
+        let description =
+            $('meta[name="description"]').attr("content") ||
+            $('meta[property="og:description"]').attr("content") ||
+            "";
+        let image =
+            $('meta[property="og:image"]').attr("content") ||
+            $('meta[name="twitter:image"]').attr("content") ||
+            "";
+        let city =
+            $('meta[property="og:locale"]').attr("content") ||
+            "";
 
-    let price = "";
-    let pricePerM2 = "";
-    let surfaceHouse = "";
-    let surfaceLand = "";
+        let price = "";
+        let pricePerM2 = "";
+        let surfaceHouse = "";
+        let surfaceLand = "";
 
-    // Scraping spécifique Leboncoin
-    if (site === "leboncoin") {
-        // Placeholders pour les sélecteurs CSS Leboncoin
-        price = $('.Price__value').first().text().trim() || "";
-        surfaceHouse = $('.Property__surface').first().text().trim() || "";
-        city = $('.Property__city').first().text().trim() || city;
-        // Les sélecteurs ci-dessus sont des exemples à adapter selon la structure réelle du site
+        // Scraping spécifique Leboncoin
+        if (site === "leboncoin") {
+            // Placeholders pour les sélecteurs CSS Leboncoin
+            price = $('.Price__value').first().text().trim() || "";
+            surfaceHouse = $('.Property__surface').first().text().trim() || "";
+            city = $('.Property__city').first().text().trim() || city;
+            // Les sélecteurs ci-dessus sont des exemples à adapter selon la structure réelle du site
+        }
+
+        return { title, description, image, city, price, pricePerM2, surfaceHouse, surfaceLand };
+    } catch (error) {
+        console.error(`Erreur lors du scraping de ${url}:`, error);
+        return {
+            title: "",
+            description: "",
+            image: "",
+            city: "",
+            price: "",
+            pricePerM2: "",
+            surfaceHouse: "",
+            surfaceLand: ""
+        };
     }
-
-    return { title, description, image, city, price, pricePerM2, surfaceHouse, surfaceLand };
 }
 
 const scrapers = {
@@ -63,26 +80,34 @@ async function run(url) {
 
     const { title, description, image, city, price, pricePerM2, surfaceHouse, surfaceLand } = await scraper(url);
 
-    await notion.pages.create({
-        parent: { database_id: DATABASE_ID },
-        title: [{ text: { content: title } }],
-        properties: {
-            "Avancement": { status: { name: "Annonce" } },
-            "Images": { files: [] },
-            "Prix": { rich_text: [{ text: { content: price } }] },
-            "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
-            "Scrapping": { select: { name: "🟢 Scrappé" } },
-            "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
-            "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
-            "URL": { url },
-            "Ville": { rich_text: [{ text: { content: city } }] },
-        },
-        ...(image && {
-            cover: { external: { url: image } },
-        }),
-    });
+    if (!notion || !DATABASE_ID) {
+        console.error("❌ Les variables d'environnement NOTION_TOKEN ou NOTION_DB_ID ne sont pas définies. Impossible d'ajouter la carte à Notion.");
+        return;
+    }
 
-    console.log("✅ Carte ajoutée à Notion !");
+    try {
+        await notion.pages.create({
+            parent: { database_id: DATABASE_ID },
+            title: [{ text: { content: title } }],
+            properties: {
+                "Avancement": { status: { name: "Annonce" } },
+                "Images": { files: [] },
+                "Prix": { rich_text: [{ text: { content: price } }] },
+                "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
+                "Scrapping": { select: { name: "🟢 Scrappé" } },
+                "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
+                "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
+                "URL": { url },
+                "Ville": { rich_text: [{ text: { content: city } }] },
+            },
+            ...(image && {
+                cover: { external: { url: image } },
+            }),
+        });
+        console.log("✅ Carte ajoutée à Notion !");
+    } catch (error) {
+        console.error("Erreur lors de la création de la page Notion :", error);
+    }
 }
 
 const url = process.argv[2];
@@ -91,4 +116,6 @@ if (!url) {
     process.exit(1);
 }
 
-run(url).catch(console.error);
+run(url).catch(error => {
+    console.error("Erreur inattendue :", error);
+});

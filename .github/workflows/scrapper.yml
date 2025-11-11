@@ -11,6 +11,10 @@ on:
         description: "ID de la page Notion à mettre à jour (laisser vide pour créer une nouvelle carte)"
         required: false
         default: ""
+      batch:
+        description: "JSON stringified array of {url, pageId}. If present, runs in batch mode."
+        required: false
+        default: ""
 
 jobs:
   scrape:
@@ -32,10 +36,14 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+          MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
         run: |
-          if [ "${{ github.event.inputs.url }}" != "" ]; then
-            echo "Scraping de l'URL passée manuellement : ${{ github.event.inputs.url }}"
+          if [ "${{ github.event.inputs.batch }}" != "" ]; then
+            echo "Mode batch détecté — traitement de plusieurs items"
+            node src/main.js --batch '${{ github.event.inputs.batch }}'
+          elif [ "${{ github.event.inputs.url }}" != "" ]; then
+            echo "Mode single : ${{ github.event.inputs.url }}"
             node src/main.js "${{ github.event.inputs.url }}" "${{ github.event.inputs.pageId }}"
           else
-            echo "Aucune URL passée, (futur mode auto à implémenter)"
+            echo "Aucun input fourni"
           fi

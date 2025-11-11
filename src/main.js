@@ -2,6 +2,8 @@ import { Client } from "@notionhq/client";
 import puppeteer from "puppeteer";
 import * as cheerio from "cheerio";
 
+const urls = process.argv.slice(2);
+
 const notion = process.env.NOTION_TOKEN && process.env.NOTION_DB_ID ? new Client({ auth: process.env.NOTION_TOKEN }) : null;
 const DATABASE_ID = process.env.NOTION_DB_ID;
 
@@ -71,7 +73,7 @@ const scrapers = {
     "bienici.com": defaultScraper,
 };
 
-async function run(url) {
+async function run(url, pageId) {
     console.log(`🔍 Scraping de : ${url}`);
 
     const domain = (new URL(url)).hostname.replace(/^www\./, "");
@@ -120,13 +122,18 @@ async function run(url) {
     }
 }
 
-const url = process.argv[2];
-const pageId = process.argv[3];
-if (!url) {
-    console.error("❌ Utilisation : node src/main.js <url>");
-    process.exit(1);
+async function runAll(urls) {
+    for (const url of urls) {
+        await run(url);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
 }
 
-run(url).catch(error => {
-    console.error("Erreur inattendue :", error);
-});
+if (urls.length === 0) {
+    console.error("❌ Aucune URL fournie.");
+    process.exit(1);
+} else {
+    runAll(urls).catch(error => {
+        console.error("Erreur inattendue :", error);
+    });
+}

@@ -5,7 +5,7 @@ on:
     inputs:
       url:
         description: "URL à scrapper (laisser vide pour ignorer)"
-        required: true
+        required: false
         default: ""
       pageId:
         description: "ID de la page Notion à mettre à jour (laisser vide pour créer une nouvelle carte)"
@@ -41,9 +41,7 @@ jobs:
           if [ "${{ github.event.inputs.batch }}" != "" ]; then
             echo "Mode batch détecté — traitement de plusieurs items"
             node src/main.js --batch '${{ github.event.inputs.batch }}'
-          elif [ "${{ github.event.inputs.url }}" != "" ]; then
+          else
             echo "Mode single : ${{ github.event.inputs.url }}"
             node src/main.js "${{ github.event.inputs.url }}" "${{ github.event.inputs.pageId }}"
-          else
-            echo "Aucun input fourni"
           fi

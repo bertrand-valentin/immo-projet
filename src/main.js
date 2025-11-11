@@ -2,7 +2,7 @@ import { Client } from "@notionhq/client";
 import puppeteer from "puppeteer";
 import * as cheerio from "cheerio";
 
-const urls = process.argv.slice(2);
+const batch = process.env.BATCH ? JSON.parse(process.env.BATCH) : [];
 
 const notion = process.env.NOTION_TOKEN && process.env.NOTION_DB_ID ? new Client({ auth: process.env.NOTION_TOKEN }) : null;
 const DATABASE_ID = process.env.NOTION_DB_ID;
@@ -122,18 +122,18 @@ async function run(url, pageId) {
     }
 }
 
-async function runAll(urls) {
-    for (const url of urls) {
-        await run(url);
+async function runAll(batch) {
+    for (const item of batch) {
+        await run(item.url, item.pageId);
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
 }
 
-if (urls.length === 0) {
-    console.error("❌ Aucune URL fournie.");
+if (batch.length === 0) {
+    console.error("❌ Aucun batch fourni ou batch vide.");
     process.exit(1);
 } else {
-    runAll(urls).catch(error => {
+    runAll(batch).catch(error => {
         console.error("Erreur inattendue :", error);
     });
 }

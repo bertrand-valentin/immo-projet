@@ -3,9 +3,13 @@ name: 🏗️ Notion Scraper
 on:
   workflow_dispatch:
     inputs:
-      batch:
-        description: "JSON stringified array of {url, pageId}. If present, runs in batch mode."
-        required: false
+      url:
+        description: "URL de la carte à scrapper"
+        required: true
+        default: ""
+      pageId:
+        description: "ID de la page Notion à mettre à jour"
+        required: true
         default: ""
 
 jobs:
@@ -30,5 +34,4 @@ jobs:
           NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
           MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
         run: |
-          echo "Mode batch détecté — traitement de plusieurs items"
-          node src/main.js --batch '${{ github.event.inputs.batch }}'
+          node src/main.js ${{ github.event.inputs.url }} ${{ github.event.inputs.pageId }}

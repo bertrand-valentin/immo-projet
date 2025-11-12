@@ -124,22 +124,28 @@ async function run(url, pageId) {
 }
 
 function mapNotionUrlToRealUrl(notionUrl) {
-    let url = notionUrl;
+    let url = notionUrl.trim();
 
     if (url.startsWith("https://www.notion.so/")) {
         url = url.replace("https://www.notion.so/", "");
     }
 
-    const dashIndex = url.lastIndexOf("-");
-    if (dashIndex === -1) return url;
+    const lastDashIndex = url.lastIndexOf("-");
+    if (lastDashIndex === -1) return url;
 
-    const base = url.substring(0, dashIndex);
-    const id = url.substring(dashIndex + 1);
-
+    const base = url.substring(0, lastDashIndex);
     if (base.startsWith("https-www-leboncoin-fr-")) {
         let path = base.replace("https-www-leboncoin-fr-", "");
-        path = path.replace(/-/g, "/").replace(/_/g, "-"); // - → /, _ → -
-        return `https://www.leboncoin.fr/${path}`;
+
+        const adIdMatch = path.match(/(\d{10})/);
+        if (!adIdMatch) {
+            console.warn("Aucun ID d'annonce trouvé dans l'URL Notion");
+            return null;
+        }
+
+        const adId = adIdMatch[0];
+
+        return `https://www.leboncoin.fr/ad/ventes_immobilieres/${adId}`;
     }
 
     return base.replace(/-/g, "/");

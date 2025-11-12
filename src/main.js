@@ -123,6 +123,40 @@ async function run(url, pageId) {
     }
 }
 
+function mapNotionUrlToRealUrl(notionUrl) {
+    if (notionUrl.startsWith("https://www.notion.so/")) {
+        notionUrl = notionUrl.replace("https://www.notion.so/", "");
+    }
+    const lastDashIndex = notionUrl.lastIndexOf("-");
+    if (lastDashIndex === -1) {
+        return notionUrl;
+    }
+    const urlPart = notionUrl.substring(0, lastDashIndex);
+
+    if (urlPart.startsWith("https-www-leboncoin-fr-")) {
+        let pathPart = urlPart.replace("https-www-leboncoin-fr-", "");
+        const segments = pathPart.split("-");
+        let reconstructedPath = segments.join("/");
+        reconstructedPath = reconstructedPath.replace(/_/g, "/");
+        return `https://www.leboncoin.fr/${reconstructedPath}`;
+    }
+
+    return urlPart.replace(/-/g, "/");
+}
+
 (async () => {
+    if (process.env.REQUEST_CONTENT) {
+        try {
+            const inputs = JSON.parse(process.env.REQUEST_CONTENT);
+            if (inputs.url) {
+                process.env.URL = mapNotionUrlToRealUrl(inputs.url);
+            }
+            if (inputs.pageId) {
+                process.env.PAGE_ID = inputs.pageId;
+            }
+        } catch (e) {
+            console.error("Erreur lors du parsing de REQUEST_CONTENT :", e);
+        }
+    }
     await run(process.env.URL, process.env.PAGE_ID);
 })();

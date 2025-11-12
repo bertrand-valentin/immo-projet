@@ -72,6 +72,9 @@ const scrapers = {
 };
 
 async function run(url, pageId) {
+    if (url.startsWith("https://www.notion.so/")) {
+        url = url.replace("https://www.notion.so/", "");
+    }
     console.log(`🔍 Scraping de : ${url}`);
 
     const domain = (new URL(url)).hostname.replace(/^www\./, "");

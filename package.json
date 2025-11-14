@@ -4,7 +4,8 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "scrape": "node src/main.js"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +16,8 @@
     "axios": "^1.13.2",
     "cheerio": "^1.1.2",
     "dotenv": "^17.2.3",
-    "puppeteer": "^24.29.1"
+    "puppeteer": "^24.29.1",
+    "puppeteer-extra": "^3.3.9",
+    "puppeteer-extra-plugin-stealth": "^2.11.1"
   }
 }

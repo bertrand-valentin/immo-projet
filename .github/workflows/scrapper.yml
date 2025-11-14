@@ -34,4 +34,4 @@ jobs:
           NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
           MAKE_WEBHOOK_URL: ${{ secrets.MAKE_WEBHOOK_URL }}
         run: |
-          node src/main.js ${{ github.event.inputs.url }} ${{ github.event.inputs.pageId }}
+          stdbuf -oL node src/main.js ${{ github.event.inputs.url }} ${{ github.event.inputs.pageId }}

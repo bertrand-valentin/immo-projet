@@ -1,67 +1,12 @@
 import { Client } from "@notionhq/client";
-import puppeteer from "puppeteer";
-import * as cheerio from "cheerio";
+import leboncoinScraper from "./scrapers/leboncoin.js";
+import defaultScraper from "./scrapers/default.js";
 
 const notion = process.env.NOTION_TOKEN && process.env.NOTION_DB_ID ? new Client({ auth: process.env.NOTION_TOKEN }) : null;
 const DATABASE_ID = process.env.NOTION_DB_ID;
 
-async function defaultScraper(url, site) {
-    try {
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox"]
-        });
-        const page = await browser.newPage();
-        await page.goto(url, { waitUntil: "domcontentloaded" });
-        const html = await page.content();
-        await browser.close();
-        const $ = cheerio.load(html);
-
-        let title = $("title").text().trim() || "Page sans titre";
-        let description =
-            $('meta[name="description"]').attr("content") ||
-            $('meta[property="og:description"]').attr("content") ||
-            "";
-        let image =
-            $('meta[property="og:image"]').attr("content") ||
-            $('meta[name="twitter:image"]').attr("content") ||
-            "";
-        let city =
-            $('meta[property="og:locale"]').attr("content") ||
-            "";
-
-        let price = "";
-        let pricePerM2 = "";
-        let surfaceHouse = "";
-        let surfaceLand = "";
-
-        // Scraping spécifique Leboncoin
-        if (site === "leboncoin") {
-            // Placeholders pour les sélecteurs CSS Leboncoin
-            price = $('.Price__value').first().text().trim() || "";
-            surfaceHouse = $('.Property__surface').first().text().trim() || "";
-            city = $('.Property__city').first().text().trim() || city;
-            // Les sélecteurs ci-dessus sont des exemples à adapter selon la structure réelle du site
-        }
-
-        return { title, description, image, city, price, pricePerM2, surfaceHouse, surfaceLand };
-    } catch (error) {
-        console.error(`Erreur lors du scraping de ${url}:`, error);
-        return {
-            title: "",
-            description: "",
-            image: "",
-            city: "",
-            price: "",
-            pricePerM2: "",
-            surfaceHouse: "",
-            surfaceLand: ""
-        };
-    }
-}
-
 const scrapers = {
-    "leboncoin.fr": (url) => defaultScraper(url, "leboncoin"),
+    "leboncoin.fr": leboncoinScraper,
     "propietes-privees.com": defaultScraper,
     "immobilier.lefigaro.fr": defaultScraper,
     "immobilier.notaires.fr": defaultScraper,
@@ -125,7 +70,6 @@ async function run(url, pageId) {
 
 function mapNotionUrlToRealUrl(notionUrl) {
     let url = notionUrl.trim();
-
     if (url.startsWith("https://www.notion.so/")) {
         url = url.replace("https://www.notion.so/", "");
     }
@@ -144,27 +88,21 @@ function mapNotionUrlToRealUrl(notionUrl) {
         }
 
         const adId = adIdMatch[0];
-
         return `https://www.leboncoin.fr/ad/ventes_immobilieres/${adId}`;
     }
-
     return base.replace(/-/g, "/");
 }
 
 (async () => {
     const rawUrl = process.argv[2];
     const pageId = process.argv[3];
-
     if (!rawUrl || !pageId) {
         console.error("❌ Erreur : URL et pageId sont requis.");
         console.error("   Usage: node src/main.js <url> <pageId>");
         process.exit(1);
     }
-
     const url = mapNotionUrlToRealUrl(rawUrl);
-
     console.log(`Scraper l'URL : ${url}`);
     console.log(`Mettre à jour la page Notion : ${pageId}`);
-
     await run(url, pageId);
 })();

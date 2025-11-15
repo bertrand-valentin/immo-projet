@@ -1,6 +1,7 @@
 import { Client } from "@notionhq/client";
 import leboncoinScraper from "./scrapers/leboncoin.js";
 import defaultScraper from "./scrapers/default.js";
+import bieniciScraper from "./scrapers/bienici.js";
 
 const notion = process.env.NOTION_TOKEN && process.env.NOTION_DB_ID ? new Client({ auth: process.env.NOTION_TOKEN }) : null;
 const DATABASE_ID = process.env.NOTION_DB_ID;
@@ -13,7 +14,7 @@ const scrapers = {
     "seloger.com": defaultScraper,
     "paruvendu.fr": defaultScraper,
     "guy-hoquet.com": defaultScraper,
-    "bienici.com": defaultScraper,
+    "bienici.com": bieniciScraper
 };
 
 async function run(url, pageId) {

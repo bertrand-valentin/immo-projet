@@ -4,7 +4,6 @@ import bieniciScraper from "./scrapers/bienici.js";
 import defaultScraper from "./scrapers/default.js";
 
 const notion = process.env.NOTION_TOKEN && process.env.NOTION_DB_ID ? new Client({ auth: process.env.NOTION_TOKEN }) : null;
-const DATABASE_ID = process.env.NOTION_DB_ID;
 
 const scrapers = {
     "leboncoin.fr": leboncoinScraper,
@@ -17,58 +16,26 @@ const scrapers = {
     "guy-hoquet.com": defaultScraper,
 };
 
-async function updateNotion(pageId, properties) {
-    if (!notion || !DATABASE_ID) return console.error("Notion non configuré");
-    try {
-        await notion.pages.update({ page_id: pageId, properties });
-        console.log("Notion mise à jour");
-    } catch (e) {
-        console.error("Échec Notion :", e.message);
-    }
+async function updateNotion(pageId, props) {
+    if (!notion) return;
+    try { await notion.pages.update({ page_id: pageId, properties: props }); }
+    catch (e) { console.error("Notion error:", e.message); }
 }
 
-async function run(url, pageId) {
-    let domain = "unknown";
-    try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch (_) {}
+function buildUrl(raw) {
+    let s = raw.trim();
 
-    const scraper = scrapers[domain] || defaultScraper;
-    console.log(`Scraping → ${url} (domaine : ${domain || "default"})`);
+    // 1. Virer le préfixe Notion complet
+    s = s.replace(/^https?:\/\/(www\.)?notion\.so\//, "");
 
-    let result = {};
-    let success = false;
+    // 2. Virer le "https-www-" ou "https-" du début
+    s = s.replace(/^https?-www-/, "");
+    s = s.replace(/^https?-/, "");
 
-    try {
-        result = await scraper(url);
-        success = true;
-    } catch (err) {
-        console.error("Échec scraper :", err.message);
-    }
+    // 3. Remettre les / à la place des -
+    s = s.replace(/-/g, "/");
 
-    const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
-
-    const properties = {
-        "Avancement": { status: { name: "Annonce" } },
-        "Scrapping": { select: { name: success ? "Scrappé" : "Erreur" } },
-        "Prix": { rich_text: [{ text: { content: price } }] },
-        "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
-        "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
-        "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
-        "Ville": { rich_text: [{ text: { content: city } }] },
-        "URL": { url },
-        ...(image && success && { cover: { external: { url: image } } }),
-    };
-
-    await updateNotion(pageId, properties);
-}
-
-function buildValidUrl(input) {
-    let s = input.trim();
-
-    if (s.startsWith("https://www.notion.so/")) s = s.slice(21);
-    if (s.startsWith("http://www.notion.so/")) s = s.slice(20);
-
-    s = s.replace(/https?-www-?/gi, "").replace(/https?-?/gi, "").replace(/-/g, "/");
-
+    // 4. Reconstruire proprement
     if (s.includes("bienici.com")) {
         const path = s.split("bienici.com")[1] || "";
         return "https://www.bienici.com" + path.split("?")[0].replace(/\/+$/, "");
@@ -82,25 +49,47 @@ function buildValidUrl(input) {
 }
 
 (async () => {
-    const raw = process.argv[2];
+    const rawUrl = process.argv[2];
     const pageId = process.argv[3];
+    if (!rawUrl || !pageId) process.exit(1);
 
-    if (!raw || !pageId) {
-        console.error("Arguments manquants");
-        process.exit(1);
-    }
-
-    const url = buildValidUrl(raw);
+    const url = buildUrl(rawUrl);
 
     if (!url) {
-        console.error("URL impossible à reconstruire → marque Erreur");
-        await updateNotion(pageId, {
-            "Scrapping": { select: { name: "Erreur" } },
-            "Avancement": { status: { name: "Annonce" } }
-        });
+        console.log("URL impossible → pastille rouge");
+        await updateNotion(pageId, { "Scrapping": { select: { name: "Erreur" } } });
         process.exit(0);
     }
 
     console.log(`URL finale → ${url}`);
-    await run(url, pageId);
+
+    let domain = "default";
+    try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch (_) {}
+
+    const scraper = scrapers[domain] || defaultScraper;
+
+    let result = {};
+    try {
+        result = await scraper(url);
+    } catch (e) {
+        console.error("Scraper planté:", e.message);
+        await updateNotion(pageId, { "Scrapping": { select: { name: "Erreur" } } });
+        process.exit(0);
+    }
+
+    const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
+
+    const props = {
+        "Avancement": { status: { name: "Annonce" } },
+        "Scrapping": { select: { name: "Scrappé" } },
+        "Prix": { rich_text: [{ text: { content: price } }] },
+        "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
+        "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
+        "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
+        "Ville": { rich_text: [{ text: { content: city } }] },
+        "URL": { url },
+        ...(image ? { cover: { external: { url: image } } } : {})
+    };
+
+    await updateNotion(pageId, props);
 })();

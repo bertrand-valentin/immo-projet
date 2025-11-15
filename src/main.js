@@ -19,11 +19,14 @@ const scrapers = {
 
 async function run(url, pageId) {
     console.log(`Scraping de : ${url}`);
-    const domain = (new URL(url)).hostname.replace(/^www\./, "");
+    let domain = "unknown";
+    try {
+        domain = (new URL(url)).hostname.replace(/^www\./, "");
+    } catch (_) {}
     const scraper = scrapers[domain] || defaultScraper;
-    console.log(`Utilisation du scraper : ${domain}`);
+    console.log(`Utilisation du scraper : ${domain || "default"}`);
     const result = await scraper(url);
-    const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
+    const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result || {};
 
     if (!notion || !DATABASE_ID) {
         console.error("Variables NOTION_TOKEN ou NOTION_DB_ID manquantes");
@@ -57,34 +60,38 @@ async function run(url, pageId) {
     }
 }
 
-function extractRealUrl(input) {
-    let str = input.trim();
+function extractRealUrl(raw) {
+    let str = raw.trim();
 
-    if (str.startsWith("https://www.notion.so/")) {
-        str = str.slice(21);
-    }
+    if (str.startsWith("https://www.notion.so/")) str = str.slice(21);
+    if (str.startsWith("http://www.notion.so/")) str = str.slice(20);
 
     const patterns = [
-        /https?-www-([a-zA-Z0-9.-]+)-([a-zA-Z0-9-]+)/,
-        /https?-([a-zA-Z0-9.-]+)-([a-zA-Z0-9-]+)/,
-        /([a-zA-Z0-9.-]+\.com.+)/,
+        /https?-www-([a-z0-9.-]+)-(.+)/i,
+        /https?-([a-z0-9.-]+)-(.+)/i,
+        /(bienici\.com\/.+)/i,
+        /(leboncoin\.fr\/.+)/i,
+        /([a-z0-9.-]+\.com\/.+)/i,
     ];
 
     for (const pattern of patterns) {
         const match = str.match(pattern);
         if (match) {
-            const candidate = match[0].startsWith("http") ? match[0] : "https://" + match[0];
-            if (candidate.includes("bienici.com") || candidate.includes("leboncoin.fr")) {
-                return candidate.replace(/-/g, "/").replace("https//", "https://").replace("http//", "http://");
-            }
+            let url = match[0].replace(/-/g, "/");
+            url = url.replace(/^https?\//, "https://");
+            if (!url.startsWith("http")) url = "https://" + url;
+            if (url.includes("bienici.com") && !url.includes("www.")) url = url.replace("bienici.com", "www.bienici.com");
+            if (url.includes("leboncoin.fr") && !url.includes("www.")) url = url.replace("leboncoin.fr", "www.leboncoin.fr");
+            return url;
         }
     }
 
-    const clean = str
-        .replace(/^https?:?\/?\/?/gi, "")
+    const cleaned = str
+        .replace(/https?:?\/?\/?/gi, "")
         .replace(/com?/gi, "com")
-        .replace(/-/g, "/");
-    return `https://www.${clean.split("/").slice(0, 3).join("/")}`;
+        .replace(/-/g, "/")
+        .trim();
+    return cleaned ? `https://www.${cleaned.split("/").slice(0, 3).join("/")}` : "https://www.bienici.com";
 }
 
 (async () => {
@@ -97,6 +104,14 @@ function extractRealUrl(input) {
     }
 
     const url = extractRealUrl(rawUrl);
+
+    if (!url || url.length < 15 || url.includes("notion.so")) {
+        console.error("URL invalide même après nettoyage :", rawUrl);
+        console.log("Notion marqué comme Scrappé quand même (pour éviter les boucles infinies)");
+        await run("https://www.bienici.com", pageId);
+        return;
+    }
+
     console.log(`Scraper l'URL : ${url}`);
     console.log(`Mettre à jour la page Notion : ${pageId}`);
     await run(url, pageId);

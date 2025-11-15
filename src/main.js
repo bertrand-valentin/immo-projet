@@ -18,20 +18,24 @@ const scrapers = {
 };
 
 async function run(url, pageId) {
-    console.log(`Scraping de : ${url}`);
     let domain = "unknown";
     try {
         domain = (new URL(url)).hostname.replace(/^www\./, "");
     } catch (_) {}
     const scraper = scrapers[domain] || defaultScraper;
-    console.log(`Utilisation du scraper : ${domain || "default"}`);
-    const result = await scraper(url);
-    const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result || {};
+    console.log(`Scraping → ${url} (domaine détecté : ${domain || "default"})`);
 
-    if (!notion || !DATABASE_ID) {
-        console.error("Variables NOTION_TOKEN ou NOTION_DB_ID manquantes");
-        return;
+    let result;
+    try {
+        result = await scraper(url);
+    } catch (err) {
+        console.error("Erreur fatale scraper :", err.message);
+        result = {};
     }
+
+    const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
+
+    if (!notion || !DATABASE_ID) return console.error("NOTION_TOKEN ou NOTION_DB_ID manquant");
 
     const properties = {
         "Avancement": { status: { name: "Annonce" } },
@@ -45,74 +49,53 @@ async function run(url, pageId) {
     };
 
     try {
-        if (pageId) {
-            await notion.pages.update({ page_id: pageId, properties });
-        } else {
-            await notion.pages.create({
-                parent: { database_id: DATABASE_ID },
-                properties,
-                ...(image && { cover: { external: { url: image } } }),
-            });
-        }
-        console.log("Notion OK");
-    } catch (error) {
-        console.error("Erreur Notion :", error.message);
+        await notion.pages.update({ page_id: pageId, properties });
+        console.log("Notion mise à jour avec succès");
+    } catch (e) {
+        console.error("Échec mise à jour Notion :", e.message);
     }
 }
 
-function extractRealUrl(raw) {
-    let str = raw.trim();
+function buildValidUrl(input) {
+    let s = input.trim().replace(/^https?:\/\/\/?/g, "").replace(/^www\./, "");
 
-    if (str.startsWith("https://www.notion.so/")) str = str.slice(21);
-    if (str.startsWith("http://www.notion.so/")) str = str.slice(20);
+    if (s.startsWith("notion.so/")) s = s.slice(10);
+    if (s.includes("https-")) s = s.split("https-")[1] || s;
+    if (s.includes("http-")) s = s.split("http-")[1] || s;
 
-    const patterns = [
-        /https?-www-([a-z0-9.-]+)-(.+)/i,
-        /https?-([a-z0-9.-]+)-(.+)/i,
-        /(bienici\.com\/.+)/i,
-        /(leboncoin\.fr\/.+)/i,
-        /([a-z0-9.-]+\.com\/.+)/i,
-    ];
+    s = s.replace(/-/g, "/").replace(/\/+/g, "/");
 
-    for (const pattern of patterns) {
-        const match = str.match(pattern);
-        if (match) {
-            let url = match[0].replace(/-/g, "/");
-            url = url.replace(/^https?\//, "https://");
-            if (!url.startsWith("http")) url = "https://" + url;
-            if (url.includes("bienici.com") && !url.includes("www.")) url = url.replace("bienici.com", "www.bienici.com");
-            if (url.includes("leboncoin.fr") && !url.includes("www.")) url = url.replace("leboncoin.fr", "www.leboncoin.fr");
-            return url;
-        }
+    const isBienIci = s.includes("bienici.com");
+    const isLBC = s.includes("leboncoin.fr");
+
+    if (isBienIci) return "https://www.bienici.com/" + s.split("bienici.com")[1].split("?")[0].replace(/\/$/, "");
+    if (isLBC) return "https://www.leboncoin.fr/" + s.split("leboncoin.fr")[1].split("?")[0].replace(/\/$/, "");
+
+    if (s.match(/^[a-z0-9-]+\.com\/annonce|\/ad|\/vente|\/location/)) {
+        const parts = s.split("/");
+        return "https://www." + parts[0] + "/" + parts.slice(1).join("/").split("?")[0];
     }
 
-    const cleaned = str
-        .replace(/https?:?\/?\/?/gi, "")
-        .replace(/com?/gi, "com")
-        .replace(/-/g, "/")
-        .trim();
-    return cleaned ? `https://www.${cleaned.split("/").slice(0, 3).join("/")}` : "https://www.bienici.com";
+    return null;
 }
 
 (async () => {
-    const rawUrl = process.argv[2];
+    const raw = process.argv[2];
     const pageId = process.argv[3];
 
-    if (!rawUrl || !pageId) {
-        console.error("Usage: node src/main.js <url> <pageId>");
+    if (!raw || !pageId) {
+        console.error("Arguments manquants");
         process.exit(1);
     }
 
-    const url = extractRealUrl(rawUrl);
+    const url = buildValidUrl(raw);
 
-    if (!url || url.length < 15 || url.includes("notion.so")) {
-        console.error("URL invalide même après nettoyage :", rawUrl);
-        console.log("Notion marqué comme Scrappé quand même (pour éviter les boucles infinies)");
-        await run("https://www.bienici.com", pageId);
-        return;
+    if (!url) {
+        console.error("URL impossible à reconstruire → arrêt propre");
+        await run("https://erreur-url-invalide.com", pageId);
+        process.exit(0);
     }
 
-    console.log(`Scraper l'URL : ${url}`);
-    console.log(`Mettre à jour la page Notion : ${pageId}`);
+    console.log(`URL finale → ${url}`);
     await run(url, pageId);
 })();

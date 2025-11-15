@@ -17,63 +17,65 @@ const scrapers = {
     "guy-hoquet.com": defaultScraper,
 };
 
+async function updateNotion(pageId, properties) {
+    if (!notion || !DATABASE_ID) return console.error("Notion non configuré");
+    try {
+        await notion.pages.update({ page_id: pageId, properties });
+        console.log("Notion mise à jour");
+    } catch (e) {
+        console.error("Échec Notion :", e.message);
+    }
+}
+
 async function run(url, pageId) {
     let domain = "unknown";
-    try {
-        domain = (new URL(url)).hostname.replace(/^www\./, "");
-    } catch (_) {}
-    const scraper = scrapers[domain] || defaultScraper;
-    console.log(`Scraping → ${url} (domaine détecté : ${domain || "default"})`);
+    try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch (_) {}
 
-    let result;
+    const scraper = scrapers[domain] || defaultScraper;
+    console.log(`Scraping → ${url} (domaine : ${domain || "default"})`);
+
+    let result = {};
+    let success = false;
+
     try {
         result = await scraper(url);
+        success = true;
     } catch (err) {
-        console.error("Erreur fatale scraper :", err.message);
-        result = {};
+        console.error("Échec scraper :", err.message);
     }
 
     const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
 
-    if (!notion || !DATABASE_ID) return console.error("NOTION_TOKEN ou NOTION_DB_ID manquant");
-
     const properties = {
         "Avancement": { status: { name: "Annonce" } },
-        "Scrapping": { select: { name: "Scrappé" } },
+        "Scrapping": { select: { name: success ? "Scrappé" : "Erreur" } },
         "Prix": { rich_text: [{ text: { content: price } }] },
         "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
         "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
         "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
         "Ville": { rich_text: [{ text: { content: city } }] },
         "URL": { url },
+        ...(image && success && { cover: { external: { url: image } } }),
     };
 
-    try {
-        await notion.pages.update({ page_id: pageId, properties });
-        console.log("Notion mise à jour avec succès");
-    } catch (e) {
-        console.error("Échec mise à jour Notion :", e.message);
-    }
+    await updateNotion(pageId, properties);
 }
 
 function buildValidUrl(input) {
-    let s = input.trim().replace(/^https?:\/\/\/?/g, "").replace(/^www\./, "");
+    let s = input.trim();
 
-    if (s.startsWith("notion.so/")) s = s.slice(10);
-    if (s.includes("https-")) s = s.split("https-")[1] || s;
-    if (s.includes("http-")) s = s.split("http-")[1] || s;
+    if (s.startsWith("https://www.notion.so/")) s = s.slice(21);
+    if (s.startsWith("http://www.notion.so/")) s = s.slice(20);
 
-    s = s.replace(/-/g, "/").replace(/\/+/g, "/");
+    s = s.replace(/https?-www-?/gi, "").replace(/https?-?/gi, "").replace(/-/g, "/");
 
-    const isBienIci = s.includes("bienici.com");
-    const isLBC = s.includes("leboncoin.fr");
-
-    if (isBienIci) return "https://www.bienici.com/" + s.split("bienici.com")[1].split("?")[0].replace(/\/$/, "");
-    if (isLBC) return "https://www.leboncoin.fr/" + s.split("leboncoin.fr")[1].split("?")[0].replace(/\/$/, "");
-
-    if (s.match(/^[a-z0-9-]+\.com\/annonce|\/ad|\/vente|\/location/)) {
-        const parts = s.split("/");
-        return "https://www." + parts[0] + "/" + parts.slice(1).join("/").split("?")[0];
+    if (s.includes("bienici.com")) {
+        const path = s.split("bienici.com")[1] || "";
+        return "https://www.bienici.com" + path.split("?")[0].replace(/\/+$/, "");
+    }
+    if (s.includes("leboncoin.fr")) {
+        const path = s.split("leboncoin.fr")[1] || "";
+        return "https://www.leboncoin.fr" + path.split("?")[0].replace(/\/+$/, "");
     }
 
     return null;
@@ -91,8 +93,11 @@ function buildValidUrl(input) {
     const url = buildValidUrl(raw);
 
     if (!url) {
-        console.error("URL impossible à reconstruire → arrêt propre");
-        await run("https://erreur-url-invalide.com", pageId);
+        console.error("URL impossible à reconstruire → marque Erreur");
+        await updateNotion(pageId, {
+            "Scrapping": { select: { name: "Erreur" } },
+            "Avancement": { status: { name: "Annonce" } }
+        });
         process.exit(0);
     }
 

@@ -25,27 +25,17 @@ async function updateNotion(pageId, props) {
 function buildUrl(raw) {
     let s = raw.trim();
 
-    // 1. Virer le préfixe Notion complet
-    s = s.replace(/^https?:\/\/(www\.)?notion\.so\//, "");
+    s = s.replace(/^https?:\/\/(www\.)?notion\.so\/?/i, "");
 
-    // 2. Virer le "https-www-" ou "https-" du début
-    s = s.replace(/^https?-www-/, "");
-    s = s.replace(/^https?-/, "");
+    const domainMatch = s.match(/(bienici\.com|leboncoin\.fr|[a-z0-9-]+\.com|[a-z0-9-]+\.fr)/i);
+    if (!domainMatch) return null;
 
-    // 3. Remettre les / à la place des -
-    s = s.replace(/-/g, "/");
+    const domain = domainMatch[0];
+    const afterDomain = s.split(domainMatch[0])[1] || "";
 
-    // 4. Reconstruire proprement
-    if (s.includes("bienici.com")) {
-        const path = s.split("bienici.com")[1] || "";
-        return "https://www.bienici.com" + path.split("?")[0].replace(/\/+$/, "");
-    }
-    if (s.includes("leboncoin.fr")) {
-        const path = s.split("leboncoin.fr")[1] || "";
-        return "https://www.leboncoin.fr" + path.split("?")[0].replace(/\/+$/, "");
-    }
+    const path = afterDomain.replace(/-/g, "/").replace(/\/+/g, "/");
 
-    return null;
+    return `https://www.${domain}${path.split("?")[0].replace(/\/$/,"")}`;
 }
 
 (async () => {

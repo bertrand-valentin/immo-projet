@@ -1,4 +1,5 @@
 import puppeteer from "puppeteer";
+import { load as cheerioLoad } from "cheerio";
 
 const USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -21,7 +22,7 @@ export default async function bieniciScraper(rawUrl) {
         const html = await page.content();
         await browser.close();
 
-        const $ = require("cheerio").load(html);
+        const $ = cheerioLoad(html);
         const clean = (t) => t?.replace(/\s+/g, " ").replace(/\u00A0/g, " ").trim() || "";
 
         const title = clean($("h1, [data-testid='ad-title'], .ad-title").first().text()) || clean($('meta[property="og:title"]').attr("content"));

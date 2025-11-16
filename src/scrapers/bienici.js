@@ -8,13 +8,14 @@ export default async function bieniciScraper(rawUrl) {
         console.log("Scraping BienIci →", cleanUrl);
         const browser = await puppeteer.launch({
             headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-web-security"],
         });
         const page = await browser.newPage();
         await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
-        await page.goto(cleanUrl, { waitUntil: "networkidle2", timeout: 20000 });
+        await page.goto(cleanUrl, { waitUntil: "networkidle2", timeout: 25000 });
 
-        await page.waitForFunction(() => document.querySelector("[data-testid='price']") || document.querySelector(".price-amount") || document.querySelector(".ad-price"), { timeout: 15000 });
+        await page.waitForSelector("[data-testid='price'], .price", { timeout: 15000 });
+        await page.waitForSelector("[data-testid^='detail-'], .detailCard", { timeout: 10000 }).catch(() => {});
 
         const html = await page.content();
         await browser.close();
@@ -22,30 +23,38 @@ export default async function bieniciScraper(rawUrl) {
         const $ = cheerioLoad(html);
         const clean = (t) => t?.replace(/\s+/g, " ").replace(/\u00A0/g, " ").trim() || "";
 
-        const title = clean($("h1[data-testid='ad-title'], h1, title").first().text());
-
-        const priceSelectors = "[data-testid='price'], .price-amount, .ad-price, [data-qa='price'], span:contains('€') + span, .price";
-        const priceElement = $(priceSelectors).first().contents().filter(function() { return this.type === 'text'; }).text() || $(priceSelectors).first().text();
-        const price = clean(priceElement).replace(/^€/, "").trim() || "";
-
-        const image = $("meta[property='og:image']").attr("content") || $("[data-testid='main-image'] img, .hero-image img").first().attr("src") || "";
-
-        const cityRaw = clean($("[data-testid='location'], .location, .ad-location").text());
-        const city = cityRaw.replace(/\d{5}/g, "").replace(/[,()]/g, "").trim().split(" - ")[0] || "";
+        const title = clean($("h1").first().text());
+        const priceRaw = clean($("[data-testid='price'], .price").first().text());
+        const price = priceRaw.split("€")[0].trim() + " €";
+        const image = $("meta[property='og:image']").attr("content") || "";
+        const city = clean($("[data-testid='location'] span, .location span, .location").first().text())
+            .replace(/\d{5}.*/, "").replace(/[-–]/g, "").trim();
 
         const details = {};
-        $("[data-testid*='detail'], [data-qa*='detail'], .detail-row, .feature-item, dl dt").each((_, el) => {
-            const fullText = clean($(el).text());
-            if (fullText.includes(":")) {
-                const [key, value] = fullText.split(":");
-                const k = clean(key).toLowerCase();
-                const v = clean(value);
-                if (k && v) details[k] = v;
+        $("[data-testid*='detail-'], [data-qa*='detail-'], .detailCard__value, .detailItem").each((_, el) => {
+            const label = clean($(el).prev().text() || $(el).find("span").first().text()).toLowerCase();
+            const value = clean($(el).text());
+            if (label.includes("surface") || label.includes("terrain")) {
+                if (label.includes("terrain") || label.includes("parcelle")) details["terrain"] = value;
+                else details["surface"] = value;
             }
         });
 
-        const surfaceHouse = details["surface"] || details["surface habitable"] || details["surf. habitable"] || details["surface (m²)"] || "";
-        const surfaceLand = details["terrain"] || details["surface terrain"] || details["surface du terrain"] || details["parcelle"] || "";
+        if (!details["surface"]) {
+            $("text").each((_, el) => {
+                const txt = clean($(el).text());
+                if (txt.includes("m²") && txt.match(/\d/)) {
+                    if (txt.toLowerCase().includes("terrain") || txt.toLowerCase().includes("parcelle")) {
+                        details["terrain"] = txt;
+                    } else if (!details["surface"] || txt.includes("hab")) {
+                        details["surface"] = txt;
+                    }
+                }
+            });
+        }
+
+        const surfaceHouse = details["surface"] || "";
+        const surfaceLand = details["terrain"] || "";
 
         let pricePerM2 = "";
         if (price && surfaceHouse) {
@@ -56,7 +65,7 @@ export default async function bieniciScraper(rawUrl) {
 
         const result = { title, price, image, city, pricePerM2, surfaceHouse, surfaceLand, description: "" };
 
-        console.log("BIENICI — CHAMPS SCRAPPÉS (16 nov 2025) :");
+        console.log("BIENICI — CHAMPS SCRAPPÉS (FINAL 16 nov 2025) :");
         console.log("→ Titre          :", `"${result.title}"`);
         console.log("→ Prix           :", `"${result.price}"`);
         console.log("→ Ville          :", `"${result.city}"`);

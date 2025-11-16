@@ -52,7 +52,7 @@ async function updateNotion(pageId, properties, coverUrl = null) {
     const { title = "", price = "", image = "", city = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
 
     const properties = {
-        Name: { title: [{ text: { content: title || "Annonce sans titre" } }] },
+        Nom: { title: [{ text: { content: title || "Maison sans titre" } }] },
         Avancement: { status: { name: "Annonce" } },
         Scrapping:  { select:  { name: "Scrappé" } },
         Prix:       { rich_text: [{ text: { content: price } }] },

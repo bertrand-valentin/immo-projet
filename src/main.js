@@ -49,18 +49,21 @@ async function updateNotion(pageId, properties, coverUrl = null) {
         process.exit(0);
     }
 
-    const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
+    const { title = "", price = "", image = "", city = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
 
     const properties = {
-        Avancement: { status: { name: "Annonce" } },
-        Scrapping: { select: { name: "Scrappé" } },
-        Prix: { rich_text: [{ text: { content: price } }] },
-        "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
-        "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
-        "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
-        Ville: { rich_text: [{ text: { content: city } }] },
-        URL: { url: realUrl }
-    };
+        Name: { title: [{ text: { content: title || "Annonce sans titre" } }],
+            Avancement: { status: { name: "Annonce" } },
+            Scrapping: { select: { name: "Scrappé" } },
+            Prix: { rich_text: [{ text: { content: price } }] },
+            "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
+            "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
+            "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
+            Ville: { rich_text: [{ text: { content: city } }] },
+            URL: { url: realUrl }
+        }
+    }
 
-    await updateNotion(pageId, properties, image || null);
+
+        await updateNotion(pageId, properties, image || null);
 })();

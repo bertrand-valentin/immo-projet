@@ -9,25 +9,16 @@ export default async function bieniciScraper(rawUrl) {
 
         const browser = await puppeteer.launch({
             headless: true,
-            args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-web-security",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--disable-blink-features=AutomationControlled",
-            ],
+            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
         });
 
         const page = await browser.newPage();
         await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
-
         await page.goto(cleanUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
         await Promise.race([
-            page.waitForSelector("[data-testid='price'], .price", { timeout: 20000 }).catch(() => {}),
-            page.waitForSelector("h1", { timeout: 15000 }).catch(() => {}),
-            page.waitForFunction(() => document.body.innerText.includes("€"), { timeout: 20000 }).catch(() => {}),
+            page.waitForSelector("[data-testid='price'], .price", { timeout: 15000 }).catch(() => {}),
+            page.waitForSelector("h1", { timeout: 10000 }).catch(() => {}),
         ]);
 
         await new Promise(r => setTimeout(r, 3000));
@@ -38,49 +29,29 @@ export default async function bieniciScraper(rawUrl) {
         const $ = cheerioLoad(html);
         const clean = (t) => t?.replace(/\s+/g, " ").replace(/\u00A0/g, " ").trim() || "";
 
-        const title = clean($("h1").first().text() || $("title").text());
+        const fullText = clean($("body").text());
 
-        const priceTexts = [];
-        $("*").contents().filter(function () { return this.type === "text"; }).each((_, el) => {
-            const txt = clean($(el).text());
-            if (txt.includes("€") && /\d/.test(txt)) priceTexts.push(txt);
-        });
+        const title = clean($("h1").first().text() || $("title").text().split("- Bien'ici")[0]);
 
-        let price = "";
-        if (priceTexts.length > 0) {
-            const amounts = priceTexts
-                .map(t => parseInt(t.replace(/\D/g, ""), 10))
-                .filter(n => n > 50000 && n < 10_000_000);
-            const maxAmount = amounts.length > 0 ? Math.max(...amounts) : 0;
-            price = maxAmount ? maxAmount.toLocaleString("fr-FR") + " €" : "";
-        }
+        const priceMatch = fullText.match(/(\d{1,3}(?:\s\d{3})*)\s*€/);
+        const price = priceMatch ? priceMatch[1].replace(/\s/g, " ") + " €" : "";
 
         const image = $("meta[property='og:image']").attr("content") || "";
 
-        const city = clean($("[data-testid='location'], .location, h2, .breadcrumb").text())
-            .replace(/\d{5}.*/g, "")
-            .replace(/[-–—]/g, "")
-            .split("·")[0]
-            .trim();
+        const cityMatch = fullText.match(/(?:à|À)\s+([A-Za-zÀ-ÿ\s-]+?)(?:\s+\(|\s+37|$)/i);
+        const city = cityMatch ? cityMatch[1].trim() : "Tours";
 
-        let surfaceHouse = "";
-        let surfaceLand = "";
-        $("text").each((_, el) => {
-            const txt = clean($(el).text());
-            if (txt.includes("m²") && /\d/.test(txt)) {
-                if (txt.toLowerCase().includes("terrain") || txt.toLowerCase().includes("parcelle")) {
-                    surfaceLand = txt;
-                } else if (!surfaceHouse) {
-                    surfaceHouse = txt;
-                }
-            }
-        });
+        const surfaceHouseMatch = fullText.match(/(\d{2,4})\s*m²(?:\s*habitable|\s*hab|\s*de\s*surface)?/i);
+        const surfaceHouse = surfaceHouseMatch ? surfaceHouseMatch[1] + " m²" : "";
+
+        const surfaceLandMatch = fullText.match(/terrain\s+de\s+(\d{3,5})\s*m²/i) || fullText.match(/(\d{3,5})\s*m²\s+de\s*terrain/i);
+        const surfaceLand = surfaceLandMatch ? surfaceLandMatch[1] + " m²" : "";
 
         let pricePerM2 = "";
         if (price && surfaceHouse) {
             const p = parseInt(price.replace(/\D/g, ""), 10);
-            const s = parseFloat(surfaceHouse.replace(/[^\d,]/g, "").replace(",", "."));
-            if (p && s > 0) pricePerM2 = Math.round(p > 0 ? p / s : 0).toLocaleString("fr-FR") + " €/m²";
+            const s = parseFloat(surfaceHouse.replace(/\D/g, ""));
+            if (p && s > 0) pricePerM2 = Math.round(p / s).toLocaleString("fr-FR") + " €/m²";
         }
 
         const result = { title, price, image, city, pricePerM2, surfaceHouse, surfaceLand, description: "" };

@@ -6,16 +6,33 @@ export default async function bieniciScraper(rawUrl) {
 
     try {
         console.log("Scraping BienIci →", cleanUrl);
+
         const browser = await puppeteer.launch({
             headless: true,
-            args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-web-security"],
+            executablePath: process.env.PUPPETEER_EXEC_PATH || undefined,
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-web-security",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-blink-features=AutomationControlled",
+            ],
         });
+
         const page = await browser.newPage();
         await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
-        await page.goto(cleanUrl, { waitUntil: "networkidle2", timeout: 25000 });
+        await page.setExtraHTTPHeaders({ "Accept-Language": "fr-FR,fr;q=0.9" });
 
-        await page.waitForSelector("[data-testid='price'], .price", { timeout: 15000 });
-        await page.waitForSelector("[data-testid^='detail-'], .detailCard", { timeout: 10000 }).catch(() => {});
+        await page.goto(cleanUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+        await Promise.race([
+            page.waitForSelector("[data-testid='price'], .price", { timeout: 20000 }),
+            page.waitForSelector("h1", { timeout: 15000 }),
+            page.waitForFunction(() => !!document.querySelector("h1") || document.body.innerText.includes("€"), { timeout: 20000 }),
+        ]).catch(() => console.log("Un des sélecteurs trouvé, on continue"));
+
+        await page.waitForTimeout(3000);
 
         const html = await page.content();
         await browser.close();
@@ -23,49 +40,51 @@ export default async function bieniciScraper(rawUrl) {
         const $ = cheerioLoad(html);
         const clean = (t) => t?.replace(/\s+/g, " ").replace(/\u00A0/g, " ").trim() || "";
 
-        const title = clean($("h1").first().text());
-        const priceRaw = clean($("[data-testid='price'], .price").first().text());
-        const price = priceRaw.split("€")[0].trim() + " €";
-        const image = $("meta[property='og:image']").attr("content") || "";
-        const city = clean($("[data-testid='location'] span, .location span, .location").first().text())
-            .replace(/\d{5}.*/, "").replace(/[-–]/g, "").trim();
+        const title = clean($("h1").first().text() || $("title").text());
 
-        const details = {};
-        $("[data-testid*='detail-'], [data-qa*='detail-'], .detailCard__value, .detailItem").each((_, el) => {
-            const label = clean($(el).prev().text() || $(el).find("span").first().text()).toLowerCase();
-            const value = clean($(el).text());
-            if (label.includes("surface") || label.includes("terrain")) {
-                if (label.includes("terrain") || label.includes("parcelle")) details["terrain"] = value;
-                else details["surface"] = value;
+        // Prix : on prend tout ce qui contient € et on garde le plus gros montant
+        const priceTexts = [];
+        $("*").contents().filter(function() { return this.type === 'text'; }).each((_, el) => {
+            const txt = clean($(el).text());
+            if (txt.includes("€") && txt.match(/\d/)) priceTexts.push(txt);
+        });
+        const price = priceTexts
+            .map(t => parseInt(t.replace(/\D/g), ""), 10))
+    .filter(n => n > 50000)
+            .sort((a, b) => b - a)[0];
+        const priceStr = price ? price.toLocaleString("fr-FR") + " €" : "";
+
+        const image = $("meta[property='og:image']").attr("content") || "";
+
+        // Ville : on prend le texte du bloc location
+        const city = clean($("[data-testid='location'], .location, h2, .breadcrumb").text())
+            .replace(/\d{5}.*/g, "")
+            .replace(/[-–—]/g, "")
+            .split("·")[0]
+            .trim();
+
+        let surfaceHouse = "";
+        let surfaceLand = "";
+        $("text").each((_, el) => {
+            const txt = clean($(el).text());
+            if (txt.includes("m²") && txt.match(/\d/)) {
+                if (txt.toLowerCase().includes("terrain") || txt.toLowerCase().includes("parcelle")) {
+                    surfaceLand = txt;
+                } else if (!surfaceHouse && (txt.includes("hab") || txt.match(/\d{3,}/))) {
+                    surfaceHouse = txt;
+                }
             }
         });
 
-        if (!details["surface"]) {
-            $("text").each((_, el) => {
-                const txt = clean($(el).text());
-                if (txt.includes("m²") && txt.match(/\d/)) {
-                    if (txt.toLowerCase().includes("terrain") || txt.toLowerCase().includes("parcelle")) {
-                        details["terrain"] = txt;
-                    } else if (!details["surface"] || txt.includes("hab")) {
-                        details["surface"] = txt;
-                    }
-                }
-            });
-        }
-
-        const surfaceHouse = details["surface"] || "";
-        const surfaceLand = details["terrain"] || "";
-
         let pricePerM2 = "";
         if (price && surfaceHouse) {
-            const p = parseInt(price.replace(/\D/g, ""), 10);
             const s = parseFloat(surfaceHouse.replace(/[^\d,]/g, "").replace(",", "."));
-            if (p && s > 0) pricePerM2 = Math.round(p / s).toLocaleString("fr-FR") + " €/m²";
+            if (s > 0) pricePerM2 = Math.round(price / s).toLocaleString("fr-FR") + " €/m²";
         }
 
-        const result = { title, price, image, city, pricePerM2, surfaceHouse, surfaceLand, description: "" };
+        const result = { title, price: priceStr, image, city, pricePerM2, surfaceHouse, surfaceLand, description: "" };
 
-        console.log("BIENICI — CHAMPS SCRAPPÉS (FINAL 16 nov 2025) :");
+        console.log("BIENICI — CHAMPS SCRAPPÉS (FINAL 16 nov 2025 15:19) :");
         console.log("→ Titre          :", `"${result.title}"`);
         console.log("→ Prix           :", `"${result.price}"`);
         console.log("→ Ville          :", `"${result.city}"`);

@@ -16,70 +16,51 @@ const scrapers = {
     "guy-hoquet.com": defaultScraper,
 };
 
-async function updateNotion(pageId, props) {
-    if (!notion) return;
-    try { await notion.pages.update({ page_id: pageId, properties: props }); }
-    catch (e) { console.error("Notion error:", e.message); }
-}
-
-function buildUrl(raw) {
-    let s = raw.trim();
-
-    s = s.replace(/^https?:\/\/(www\.)?notion\.so\/?/i, "");
-
-    const domainMatch = s.match(/(bienici\.com|leboncoin\.fr|[a-z0-9-]+\.com|[a-z0-9-]+\.fr)/i);
-    if (!domainMatch) return null;
-
-    const domain = domainMatch[0];
-    const afterDomain = s.split(domainMatch[0])[1] || "";
-
-    const path = afterDomain.replace(/-/g, "/").replace(/\/+/g, "/");
-
-    return `https://www.${domain}${path.split("?")[0].replace(/\/$/,"")}`;
+async function updateNotion(pageId, properties, coverUrl = null) {
+    if (!notion) return console.error("Notion non configuré");
+    const payload = { page_id: pageId, properties };
+    if (coverUrl) payload.cover = { type: "external", external: { url: coverUrl } };
+    try {
+        await notion.pages.update(payload);
+        console.log("Notion mise à jour avec succès");
+    } catch (e) {
+        console.error("Erreur Notion :", e.message);
+    }
 }
 
 (async () => {
-    const rawUrl = process.argv[2];
+    const realUrl = process.argv[2];
     const pageId = process.argv[3];
-    if (!rawUrl || !pageId) process.exit(1);
+    if (!realUrl || !pageId) process.exit(1);
 
-    const url = buildUrl(rawUrl);
+    console.log(`Scraping → ${realUrl}`);
 
-    if (!url) {
-        console.log("URL impossible → pastille rouge");
-        await updateNotion(pageId, { "Scrapping": { select: { name: "Erreur" } } });
-        process.exit(0);
-    }
-
-    console.log(`URL finale → ${url}`);
-
-    let domain = "default";
-    try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch (_) {}
+    let domain = "unknown";
+    try { domain = new URL(realUrl).hostname.replace(/^www\./, ""); } catch (_) {}
 
     const scraper = scrapers[domain] || defaultScraper;
 
     let result = {};
     try {
-        result = await scraper(url);
+        result = await scraper(realUrl);
     } catch (e) {
-        console.error("Scraper planté:", e.message);
-        await updateNotion(pageId, { "Scrapping": { select: { name: "Erreur" } } });
+        console.error("Scraper planté :", e.message);
+        await updateNotion(pageId, { Scrapping: { select: { name: "Erreur" } } });
         process.exit(0);
     }
 
     const { title = "", description = "", image = "", city = "", price = "", pricePerM2 = "", surfaceHouse = "", surfaceLand = "" } = result;
 
-    const props = {
-        "Avancement": { status: { name: "Annonce" } },
-        "Scrapping": { select: { name: "Scrappé" } },
-        "Prix": { rich_text: [{ text: { content: price } }] },
+    const properties = {
+        Avancement: { status: { name: "Annonce" } },
+        Scrapping: { select: { name: "Scrappé" } },
+        Prix: { rich_text: [{ text: { content: price } }] },
         "Prix/m2": { rich_text: [{ text: { content: pricePerM2 } }] },
         "Surface maison": { rich_text: [{ text: { content: surfaceHouse } }] },
         "Surface terrain": { rich_text: [{ text: { content: surfaceLand } }] },
-        "Ville": { rich_text: [{ text: { content: city } }] },
-        "URL": { url },
-        ...(image ? { cover: { external: { url: image } } } : {})
+        Ville: { rich_text: [{ text: { content: city } }] },
+        URL: { url: realUrl }
     };
 
-    await updateNotion(pageId, props);
+    await updateNotion(pageId, properties, image || null);
 })();

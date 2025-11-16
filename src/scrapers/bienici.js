@@ -21,6 +21,7 @@ export default async function bieniciScraper(rawUrl) {
 
         const page = await browser.newPage();
         await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
+
         await page.goto(cleanUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
         await Promise.race([
@@ -29,7 +30,7 @@ export default async function bieniciScraper(rawUrl) {
             page.waitForFunction(() => document.body.innerText.includes("€"), { timeout: 20000 }).catch(() => {}),
         ]);
 
-        await page.waitForTimeout(3000);
+        await new Promise(r => setTimeout(r, 3000));
 
         const html = await page.content();
         await browser.close();
@@ -50,8 +51,8 @@ export default async function bieniciScraper(rawUrl) {
             const amounts = priceTexts
                 .map(t => parseInt(t.replace(/\D/g, ""), 10))
                 .filter(n => n > 50000 && n < 10_000_000);
-            const maxAmount = Math.max(...amounts);
-            price = maxAmount.toLocaleString("fr-FR") + " €";
+            const maxAmount = amounts.length > 0 ? Math.max(...amounts) : 0;
+            price = maxAmount ? maxAmount.toLocaleString("fr-FR") + " €" : "";
         }
 
         const image = $("meta[property='og:image']").attr("content") || "";
@@ -79,12 +80,12 @@ export default async function bieniciScraper(rawUrl) {
         if (price && surfaceHouse) {
             const p = parseInt(price.replace(/\D/g, ""), 10);
             const s = parseFloat(surfaceHouse.replace(/[^\d,]/g, "").replace(",", "."));
-            if (p && s > 0) pricePerM2 = Math.round(p / s).toLocaleString("fr-FR") + " €/m²";
+            if (p && s > 0) pricePerM2 = Math.round(p > 0 ? p / s : 0).toLocaleString("fr-FR") + " €/m²";
         }
 
         const result = { title, price, image, city, pricePerM2, surfaceHouse, surfaceLand, description: "" };
 
-        console.log("BIENICI — CHAMPS SCRAPPÉS (16 nov 2025 - FINAL FIX) :");
+        console.log("BIENICI — CHAMPS SCRAPPÉS :");
         console.log("→ Titre          :", `"${result.title}"`);
         console.log("→ Prix           :", `"${result.price}"`);
         console.log("→ Ville          :", `"${result.city}"`);
